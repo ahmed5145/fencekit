@@ -24,7 +24,7 @@ class KeySpace:
         self.prefix = _validate_segment(prefix, "prefix")
 
     def idempotency(self, key: str) -> str:
-        """``{prefix}:idem:{namespace}:{sha256}`` — *key* is already namespaced."""
+        """Build ``{prefix}:idem:{namespace}:{sha256}`` from a namespaced key."""
         key = _validate_segment(key, "idempotency key")
         return f"{self.prefix}:idem:{key}"
 

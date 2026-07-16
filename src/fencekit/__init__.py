@@ -1,4 +1,4 @@
-"""fencekit — Redis idempotency, distributed locks, and fencing tokens."""
+"""Redis idempotency and fenced locks for background jobs."""
 
 from fencekit._version import __version__
 from fencekit.canonicalize import canonicalize, idempotency_key

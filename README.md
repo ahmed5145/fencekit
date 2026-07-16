@@ -1,25 +1,19 @@
 # fencekit
 
-Redis-backed primitives for **idempotent background jobs**: idempotency keys,
-distributed locks, and **fencing tokens** so a stale lock holder cannot overwrite
-state after losing the lock when the destination atomically enforces the token.
-
-> Built for correctness under worker crash and Celery-style at-least-once
-> redelivery — not for stars or download counts.
+Redis-backed idempotency and fenced locks for background jobs. A destination that
+atomically checks the fencing token can reject writes from a stale lock holder.
 
 ## Why
 
-ChessMate ([chess-mate.online](https://chess-mate.online)) runs batch game-analysis
-pipelines on Celery (import from Chess.com/Lichess → Stockfish → coaching report).
-With Redis as broker/backend and late-ack reliability, a worker crash or redelivery
-can re-run the same analysis job. Early on that meant duplicate work: the same game
-batch progressing twice, wasted CPU, and confusing progress when two workers touched
-the same job.
+ChessMate ([chess-mate.online](https://chess-mate.online)) runs imported games
+through Stockfish before writing a coaching report. With Redis as the Celery broker
+and late acknowledgements enabled, a worker crash can cause the same job to be
+delivered again. I saw batches progress twice. That wasted Stockfish CPU and left
+the recorded progress ambiguous.
 
-Celery’s docs are clear that late ack implies tasks must be idempotent — but “just
-make it idempotent” is hand-wavy in application code. fencekit extracts the Redis
-primitives needed (idempotency key + lock + fencing) into a small library with
-property tests for crash/restart, so the guarantees are explicit and testable.
+Celery requires late-ack tasks to be idempotent, but each task still needs code to
+enforce that property. fencekit collects the Redis operations I used in ChessMate.
+Its tests reproduce worker death and lock-expiry races.
 
 ## Install
 
@@ -61,41 +55,35 @@ def analyze_batch() -> None:
     try:
         # Atomic fence check + Redis progress write:
         fence.set_if_fresh(handle.token, "analysis:batch-42:status", "running")
-        # ... extend the lock on heartbeats and fence every durable write ...
+        # Extend the lock on heartbeats and fence every durable write.
         guard.mark_done(key)
     finally:
         lock.release(handle)
 ```
 
-## Guarantees (honest)
+## Guarantees
 
 | Claim | Status |
 |-------|--------|
 | At-most-once *start* within the idempotency TTL (Redis available) | Yes (`SET NX`) |
 | Mutual exclusion while lock TTL held (single Redis primary) | Best-effort lease |
 | Stale holder cannot overwrite via atomic `FenceGate.set_if_fresh` | Yes |
-| Exactly-once delivery | **No** |
-| Safety under Redis failover / split brain | **No** (v0.1) |
-| Safety if the app writes without presenting the token | **No** |
+| Exactly-once delivery | No |
+| Safety under Redis failover / split brain | No (v0.1) |
+| Safety if the app writes without presenting the token | No |
 
-See [DESIGN.md](DESIGN.md) for threat model, Lua algorithms, TTL guidance, and
-crash/restart semantics. We do **not** implement Redlock.
+See [DESIGN.md](DESIGN.md) for the threat model, Lua algorithms, TTL guidance, and
+crash/restart semantics. fencekit does not implement Redlock.
 
-Fencing prevents stale overwrites; it does not make an arbitrary external side
-effect exactly once. For that, the destination must atomically enforce both the
-fence token and a unique business-operation key.
-
-## Interview artifact
-
-Property test `tests/property/test_fencing_expiry.py`: worker abandons the lock
-(simulated crash); after TTL a new owner gets token `N+1`; the stale token is
-rejected by `FenceGate`.
+Fencing covers stale overwrites. Exactly-once external effects also require the
+destination to enforce the fence token and a unique business-operation key in
+one atomic operation.
 
 ## Running tests
 
 ```bat
-REM CMD (Windows) — no uv required
-cd /d C:\Users\hussah01\Projects\fencekit
+REM CMD (Windows), no uv required
+cd fencekit
 python -m pip install -e ".[dev]"
 python -m ruff check --fix src tests
 python -m ruff check src tests
@@ -103,7 +91,7 @@ python -m mypy src
 python -m pytest -m "not integration" -q
 ```
 
-Full suite needs a Redis server on `localhost:6379` (Docker Desktop, Memurai, or WSL):
+The full suite needs Redis on `localhost:6379`:
 
 ```bat
 set FENCEKIT_REDIS_URL=redis://localhost:6379/15
@@ -121,18 +109,7 @@ export FENCEKIT_REDIS_URL=redis://localhost:6379/15
 uv run pytest
 ```
 
-## Status
-
-v0.1.0 — publishable library focused on systems/correctness signal.
-
-Resume line:
-
-> Built fencekit, a Redis-backed library for idempotent background jobs with
-> fencing tokens and distributed locks; property-tested crash/restart and
-> lock-expiry races; typed public API and CI.
-
-Celery adapters are intentionally out of scope for v0.1 (may arrive later as an
-optional extra).
+v0.1 has no Celery adapter. A later release may add one as an optional extra.
 
 ## License
 

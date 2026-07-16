@@ -32,7 +32,7 @@ def test_crash_restart_stale_token_fenced(
     redis_client: tuple[Any, str],
     ttl_ms: int,
 ) -> None:
-    """Interview artifact: abandon lock → TTL → new token → stale rejected."""
+    """Reject the abandoned holder after expiry and a fresh acquisition."""
     client, prefix = redis_client
     lock = DistributedLock(client, prefix=prefix)
     fence = FenceGate(client, prefix=prefix)
@@ -107,7 +107,7 @@ def test_fencing_tokens_monotonic_on_abandon(
         assert handle.token.value > last
         last = handle.token.value
         fence.check_and_advance(handle.token)
-        # abandon (crash) — do not release
+        # Simulate a crash by abandoning the lock.
         time.sleep(0.15)
     assert fence.current_max(resource) == last
 

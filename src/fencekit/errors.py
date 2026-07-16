@@ -26,8 +26,7 @@ class IdempotencyNotOwned(FenceKitError):
 class FencedOutError(FenceKitError):
     """Raised when a write presents a fencing token older than the gate max.
 
-    This is the safety net after a stale lock holder resumes (GC pause, network
-    delay) and a newer owner has already advanced the fence.
+    A stale holder receives this error after a newer owner advances the fence.
     """
 
 

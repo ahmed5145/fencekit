@@ -50,7 +50,7 @@ def canonicalize(payload: Mapping[str, object]) -> str:
     - Only JSON-serializable mappings, sequences, and scalars.
     - Keys are sorted; separators are compact ``(",", ":")``; ``ensure_ascii=True``.
     - Non-finite floats are rejected.
-    - ``datetime`` and other objects are not accepted — pass ISO strings yourself.
+    - ``datetime`` and other objects are rejected. Pass ISO strings yourself.
 
     Key stability is the caller's contract: the same business identity must
     serialize the same way across producers.
@@ -74,8 +74,8 @@ def canonicalize(payload: Mapping[str, object]) -> str:
 def idempotency_key(payload: Mapping[str, object], *, namespace: str) -> str:
     """Build a deterministic idempotency key from *payload* and *namespace*.
 
-    Returns ``{namespace}:{sha256_hex}`` (no Redis prefix — add that via
-    :class:`~fencekit.idempotency.IdempotencyGuard` / key helpers).
+    Returns ``{namespace}:{sha256_hex}``. The idempotency guard and key helpers
+    add the Redis prefix.
     """
     if not namespace or not isinstance(namespace, str):
         raise CanonicalizeError("namespace must be a non-empty str")
