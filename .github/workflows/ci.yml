@@ -70,5 +70,5 @@ jobs:
           python-version: "3.12"
       - name: Build
         run: uv build
-      - name: Check artifact
-        run: ls -la dist && test -f dist/fencekit-0.1.0-py3-none-any.whl
+      - name: Check package metadata
+        run: uvx --from twine==6.2.0 twine check dist/*
