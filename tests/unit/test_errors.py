@@ -11,6 +11,7 @@ from fencekit import (
     FenceKitError,
     FenceToken,
     IdempotencyNotOwned,
+    IdempotencyResultMissing,
     LockHandle,
     LockNotAcquired,
     LockNotOwned,
@@ -28,6 +29,7 @@ def test_error_hierarchy() -> None:
         LockNotAcquired,
         LockNotOwned,
         IdempotencyNotOwned,
+        IdempotencyResultMissing,
         FencedOutError,
         TokenExpiredError,
     ):

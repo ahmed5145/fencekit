@@ -58,3 +58,28 @@ def test_mark_done_blocks_begin(
     guard.mark_done(key, ttl=ttl)
     assert guard.try_begin(key, ttl=ttl) is False
     guard.clear(key)
+
+
+@given(
+    report_id=st.integers(min_value=1, max_value=10_000),
+    games=st.lists(st.text(min_size=1, max_size=8), max_size=5),
+)
+@settings(
+    max_examples=8,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_memoized_result_round_trip(
+    redis_client: tuple[Any, str],
+    report_id: int,
+    games: list[str],
+) -> None:
+    client, prefix = redis_client
+    guard = IdempotencyGuard(client, prefix=prefix)
+    key = idempotency_key({"job": "memo", "report_id": report_id}, namespace="idem")
+    result = {"report_id": report_id, "games": games}
+    assert guard.try_begin(key, ttl=timedelta(seconds=30))
+    guard.mark_done(key, result=result, ttl=timedelta(seconds=30))
+    assert guard.get_result(key) == result
+    assert guard.try_begin(key, ttl=timedelta(seconds=30)) is False
+    guard.clear(key)

@@ -23,6 +23,14 @@ class IdempotencyNotOwned(FenceKitError):
     """Raised when a worker cannot complete an idempotency key it does not own."""
 
 
+class IdempotencyResultMissing(FenceKitError):
+    """Raised when no memoized result is available for an idempotency key.
+
+    Typical causes: the key is absent, still pending, completed without a
+    stored result, or the result TTL expired.
+    """
+
+
 class FencedOutError(FenceKitError):
     """Raised when a write presents a fencing token older than the gate max.
 

@@ -42,6 +42,34 @@ def _normalize(value: object) -> JsonValue:
     )
 
 
+def dumps_json(value: object) -> str:
+    """Serialize *value* with the same JSON rules as :func:`canonicalize`.
+
+    Accepts any JSON-serializable value (including ``None``, lists, and
+    scalars), not only top-level mappings. Used for memoized idempotency
+    results.
+    """
+    normalized = _normalize(value)
+    try:
+        return json.dumps(
+            normalized,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise CanonicalizeError(str(exc)) from exc
+
+
+def loads_json(text: str) -> object:
+    """Parse a JSON string previously produced for fencekit storage."""
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError) as exc:
+        raise CanonicalizeError(str(exc)) from exc
+
+
 def canonicalize(payload: Mapping[str, object]) -> str:
     """Return a deterministic JSON string for *payload*.
 
@@ -57,18 +85,7 @@ def canonicalize(payload: Mapping[str, object]) -> str:
     """
     if not isinstance(payload, Mapping):
         raise CanonicalizeError("payload must be a mapping")
-    normalized = _normalize(dict(payload))
-    assert isinstance(normalized, dict)
-    try:
-        return json.dumps(
-            normalized,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CanonicalizeError(str(exc)) from exc
+    return dumps_json(dict(payload))
 
 
 def idempotency_key(payload: Mapping[str, object], *, namespace: str) -> str:
