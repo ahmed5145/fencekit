@@ -4,13 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fencekit"
-version = "0.3.0"
+version = "0.3.1"
 description = "Redis-backed idempotent task primitives: fencing tokens and distributed locks"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "Ahmed Mohamed", email = "ahmed5145@users.noreply.github.com" },
+    { name = "Ahmed Mohamed", email = "ahmedmohamed200354@gmail.com" },
+]
+maintainers = [
+    { name = "Ahmed Mohamed", email = "hussah01@luther.edu" },
 ]
 keywords = [
     "redis",
