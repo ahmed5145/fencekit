@@ -14,6 +14,7 @@ from fencekit import (
     FenceGate,
     IdempotencyGuard,
     IdempotencyNotOwned,
+    IdempotencyResultMissing,
     LockNotAcquired,
     LockNotOwned,
     idempotency_key,
@@ -96,6 +97,58 @@ def test_mark_done_requires_owner(redis_client: tuple[Any, str]) -> None:
     with pytest.raises(IdempotencyNotOwned):
         other.mark_done(key, ttl=timedelta(seconds=30))
     owner.mark_done(key, ttl=timedelta(seconds=30))
+
+
+def test_mark_done_memoizes_result(redis_client: tuple[Any, str]) -> None:
+    client, prefix = redis_client
+    guard = IdempotencyGuard(client, prefix=prefix)
+    key = idempotency_key({"batch": 3}, namespace="analysis")
+    assert guard.try_begin(key, ttl=timedelta(seconds=30))
+    payload = {"report_id": 42, "games": ["g1", "g2"]}
+    guard.mark_done(key, result=payload, ttl=timedelta(seconds=30))
+    assert guard.status(key) == "done"
+    assert guard.get_result(key) == payload
+    assert guard.try_begin(key, ttl=timedelta(seconds=30)) is False
+
+
+def test_mark_done_memoizes_none(redis_client: tuple[Any, str]) -> None:
+    client, prefix = redis_client
+    guard = IdempotencyGuard(client, prefix=prefix)
+    key = idempotency_key({"batch": 4}, namespace="analysis")
+    assert guard.try_begin(key, ttl=timedelta(seconds=30))
+    guard.mark_done(key, result=None, ttl=timedelta(seconds=30))
+    assert guard.get_result(key) is None
+
+
+def test_get_result_missing_without_memo(redis_client: tuple[Any, str]) -> None:
+    client, prefix = redis_client
+    guard = IdempotencyGuard(client, prefix=prefix)
+    key = idempotency_key({"batch": 5}, namespace="analysis")
+    assert guard.try_begin(key, ttl=timedelta(seconds=30))
+    guard.mark_done(key, ttl=timedelta(seconds=30))
+    with pytest.raises(IdempotencyResultMissing, match="without a stored result"):
+        guard.get_result(key)
+
+
+def test_get_result_missing_while_pending(redis_client: tuple[Any, str]) -> None:
+    client, prefix = redis_client
+    guard = IdempotencyGuard(client, prefix=prefix)
+    key = idempotency_key({"batch": 6}, namespace="analysis")
+    assert guard.try_begin(key, ttl=timedelta(seconds=30))
+    with pytest.raises(IdempotencyResultMissing, match="pending"):
+        guard.get_result(key)
+
+
+def test_foreign_mark_done_cannot_store_result(redis_client: tuple[Any, str]) -> None:
+    client, prefix = redis_client
+    owner = IdempotencyGuard(client, prefix=prefix, owner_id="worker-a")
+    other = IdempotencyGuard(client, prefix=prefix, owner_id="worker-b")
+    key = idempotency_key({"batch": 7}, namespace="analysis")
+    assert owner.try_begin(key, ttl=timedelta(seconds=30))
+    with pytest.raises(IdempotencyNotOwned):
+        other.mark_done(key, result={"stolen": True}, ttl=timedelta(seconds=30))
+    owner.mark_done(key, result={"ok": True}, ttl=timedelta(seconds=30))
+    assert owner.get_result(key) == {"ok": True}
 
 
 def test_batch_analysis_simulation(redis_client: tuple[Any, str]) -> None:

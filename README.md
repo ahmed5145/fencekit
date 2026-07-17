@@ -37,6 +37,7 @@ from fencekit import (
     DistributedLock,
     FenceGate,
     IdempotencyGuard,
+    IdempotencyResultMissing,
     fenced_update,
     idempotency_key,
 )
@@ -52,7 +53,11 @@ def analyze_batch(job) -> None:
         namespace="analysis",
     )
     if not guard.try_begin(key, ttl=timedelta(hours=24)):
-        return  # already started or completed
+        # Already started or completed; return a prior memo when present.
+        try:
+            return guard.get_result(key)
+        except IdempotencyResultMissing:
+            return
 
     handle = lock.acquire(f"analysis:{job.pk}", ttl=timedelta(minutes=5))
     try:
@@ -64,7 +69,9 @@ def analyze_batch(job) -> None:
             handle.token,
             updates={"progress": 50, "status": "running"},
         )
-        guard.mark_done(key)
+        result = {"report_id": job.pk, "status": "done"}
+        guard.mark_done(key, result=result, ttl=timedelta(hours=24))
+        return result
     finally:
         lock.release(handle)
 ```
@@ -78,8 +85,9 @@ def analyze_batch(job) -> None:
 | Stale holder cannot overwrite via atomic `FenceGate.set_if_fresh` | Yes (Redis strings) |
 | Stale holder cannot overwrite via `fenced_update` / equivalent SQL | Yes (when used) |
 | Exactly-once delivery | No |
-| Safety under Redis failover / split brain | No (v0.2) |
+| Safety under Redis failover / split brain | No (v0.3) |
 | Safety if the app writes without presenting the token | No |
+| Memoized result available after `mark_done(..., result=...)` | Yes (within TTL) |
 
 See [DESIGN.md](DESIGN.md) for the threat model, Lua algorithms, TTL guidance, and
 crash/restart semantics. fencekit does not implement Redlock.
@@ -120,7 +128,7 @@ export FENCEKIT_REDIS_URL=redis://localhost:6379/15
 uv run pytest
 ```
 
-v0.2 has no Celery adapter. A later release may add one as an optional extra.
+v0.3 has no Celery adapter. A later release may add one as an optional extra.
 
 ## License
 

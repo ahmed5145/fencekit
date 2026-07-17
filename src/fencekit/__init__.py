@@ -1,13 +1,14 @@
 """Redis idempotency and fenced locks for background jobs."""
 
 from fencekit._version import __version__
-from fencekit.canonicalize import canonicalize, idempotency_key
+from fencekit.canonicalize import canonicalize, dumps_json, idempotency_key, loads_json
 from fencekit.client import RedisClient, SyncRedis
 from fencekit.errors import (
     CanonicalizeError,
     FencedOutError,
     FenceKitError,
     IdempotencyNotOwned,
+    IdempotencyResultMissing,
     LockNotAcquired,
     LockNotOwned,
     TokenExpiredError,
@@ -27,6 +28,7 @@ __all__ = [
     "FencedOutError",
     "IdempotencyGuard",
     "IdempotencyNotOwned",
+    "IdempotencyResultMissing",
     "LockHandle",
     "LockNotAcquired",
     "LockNotOwned",
@@ -36,6 +38,8 @@ __all__ = [
     "TokenExpiredError",
     "__version__",
     "canonicalize",
+    "dumps_json",
     "fenced_update",
     "idempotency_key",
+    "loads_json",
 ]

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-17
+
+### Added
+
+- `IdempotencyGuard.mark_done(..., result=...)` stores a JSON memo atomically
+  with the done marker (same TTL; `None` is a valid result)
+- `IdempotencyGuard.get_result` to read the memo on redelivery
+- `IdempotencyResultMissing` when no memo is available
+- `dumps_json` / `loads_json` helpers sharing canonicalize rules
+
 ## [0.2.0] - 2026-07-17
 
 ### Added

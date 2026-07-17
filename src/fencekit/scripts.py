@@ -75,22 +75,38 @@ redis.call('SET', KEYS[2], ARGV[2])
 return 1
 """
 
-# KEYS[1]=idem_key; ARGV[1]=owner_id, ARGV[2]=ttl_seconds.
-# Mark done only for the worker that began. Returns 1 if completed.
+# KEYS[1]=idem_key, KEYS[2]=result_key;
+# ARGV[1]=owner_id, ARGV[2]=ttl_seconds, ARGV[3]=store_result (0|1),
+# ARGV[4]=result_json when store_result=1.
+# Mark done only for the worker that began. Optionally store a memoized
+# result under KEYS[2] with the same TTL. When store_result=0, delete any
+# previous result key. Returns 1 if completed.
 MARK_DONE_SCRIPT = """
 local expected = 'pending:' .. ARGV[1]
 if redis.call('GET', KEYS[1]) ~= expected then
   return 0
 end
 local ttl = tonumber(ARGV[2])
+local store_result = tonumber(ARGV[3])
+local pttl = -1
 if ttl ~= nil and ttl > 0 then
   redis.call('SET', KEYS[1], 'done', 'EX', ttl)
+  pttl = ttl * 1000
 else
-  local pttl = redis.call('PTTL', KEYS[1])
+  pttl = redis.call('PTTL', KEYS[1])
   redis.call('SET', KEYS[1], 'done')
   if pttl > 0 then
     redis.call('PEXPIRE', KEYS[1], pttl)
   end
+end
+if store_result == 1 then
+  if pttl > 0 then
+    redis.call('SET', KEYS[2], ARGV[4], 'PX', pttl)
+  else
+    redis.call('SET', KEYS[2], ARGV[4])
+  end
+else
+  redis.call('DEL', KEYS[2])
 end
 return 1
 """

@@ -6,7 +6,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from fencekit.canonicalize import canonicalize, idempotency_key
+from fencekit.canonicalize import canonicalize, dumps_json, idempotency_key, loads_json
 from fencekit.errors import CanonicalizeError
 from fencekit.keys import KeySpace
 
@@ -15,6 +15,25 @@ def test_canonicalize_sorts_keys() -> None:
     a = canonicalize({"b": 1, "a": 2})
     b = canonicalize({"a": 2, "b": 1})
     assert a == b == '{"a":2,"b":1}'
+
+
+def test_dumps_json_accepts_scalars_and_none() -> None:
+    assert dumps_json(None) == "null"
+    assert dumps_json(42) == "42"
+    assert dumps_json([1, {"b": 2, "a": 1}]) == '[1,{"a":1,"b":2}]'
+    assert loads_json("null") is None
+    assert loads_json('[1,{"a":1,"b":2}]') == [1, {"a": 1, "b": 2}]
+
+
+def test_dumps_json_rejects_unsupported() -> None:
+    with pytest.raises(CanonicalizeError):
+        dumps_json({"x": object()})
+
+
+def test_idempotency_result_key() -> None:
+    keys = KeySpace("fk")
+    base = keys.idempotency("analysis:abc")
+    assert keys.idempotency_result("analysis:abc") == f"{base}:result"
 
 
 def test_idempotency_key_stable_under_key_order() -> None:

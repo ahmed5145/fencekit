@@ -11,6 +11,7 @@ from fencekit import (
     FenceKitError,
     FenceToken,
     IdempotencyNotOwned,
+    IdempotencyResultMissing,
     LockHandle,
     LockNotAcquired,
     LockNotOwned,
@@ -20,7 +21,7 @@ from fencekit import (
 
 
 def test_version() -> None:
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
 
 
 def test_error_hierarchy() -> None:
@@ -28,6 +29,7 @@ def test_error_hierarchy() -> None:
         LockNotAcquired,
         LockNotOwned,
         IdempotencyNotOwned,
+        IdempotencyResultMissing,
         FencedOutError,
         TokenExpiredError,
     ):

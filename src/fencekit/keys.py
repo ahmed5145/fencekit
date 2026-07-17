@@ -28,6 +28,10 @@ class KeySpace:
         key = _validate_segment(key, "idempotency key")
         return f"{self.prefix}:idem:{key}"
 
+    def idempotency_result(self, key: str) -> str:
+        """Build the companion memoized-result key for an idempotency entry."""
+        return f"{self.idempotency(key)}:result"
+
     def lock(self, resource: str) -> str:
         resource = _validate_segment(resource, "resource")
         return f"{self.prefix}:lock:{resource}"
