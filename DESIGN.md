@@ -38,6 +38,20 @@ Only one caller begins. `mark_done` uses Lua to compare the guard owner before
 setting `done` (with an optional TTL refresh), so a stale worker cannot complete
 a key reclaimed by another worker after expiry.
 
+When `mark_done(..., result=...)` is used, the same Lua script writes a companion
+result key with the same TTL:
+
+```
+{prefix}:idem:{namespace}:{sha256}        -> "done"
+{prefix}:idem:{namespace}:{sha256}:result -> canonical JSON
+```
+
+`None` is a valid memo (`null`). Completing without `result=` deletes any prior
+memo. `get_result` raises `IdempotencyResultMissing` when the key is absent,
+pending, done without a memo, or the memo expired. A successful `try_begin`
+also deletes a leftover result key so a stale memo cannot outlive a reclaimed
+idempotency entry.
+
 Canonicalization rules:
 
 - top-level payload and nested objects are mappings with string keys;
@@ -134,6 +148,7 @@ uses that ownership rule and does not implement Redlock.
 | Claim | Status |
 |-------|--------|
 | At-most-once *start* within the idempotency TTL (Redis up) | Yes |
+| Memoized JSON result after `mark_done(..., result=...)` | Yes (within TTL) |
 | Mutual exclusion while lease held (single primary) | Best-effort |
 | Stale holder cannot mutate via atomic `set_if_fresh` | Yes (Redis strings) |
 | Stale holder cannot mutate via `fenced_update` / SQL | Yes (when used) |
@@ -183,7 +198,8 @@ a card charge, execute exactly once.
 2. Kill after TTL: new owner gets higher token; stale atomic fenced writes
    fail (`FencedOutError`). See `tests/property/test_fencing_expiry.py`.
 3. Celery redelivery: same idempotency key means `try_begin` is False while TTL
-   holds.
+   holds. If the first run stored a memo, `get_result` returns it; otherwise the
+   caller only learns that work is pending or done without a payload.
 4. Partial side effects (temp files, half-written rows) remain an application
    concern; fence every durable mutation.
 
@@ -201,6 +217,7 @@ value when a duplicate start after completion would be unsafe.
 | Purpose | Pattern |
 |---------|---------|
 | Idempotency | `{prefix}:idem:{namespace}:{sha256}` |
+| Idempotency result | `{prefix}:idem:{namespace}:{sha256}:result` |
 | Lock | `{prefix}:lock:{resource}` |
 | Fence sequence | `{prefix}:fence:seq:{resource}` |
 | Fence max | `{prefix}:fence:max:{resource}` |
@@ -244,4 +261,4 @@ update under a lock. Redis `FenceGate` does not protect these rows by itself.
 ## Versioning
 
 Semver from 0.1.0. Breaking API changes bump minor while 0.x. Additive helpers
-such as `fenced_update` are minor bumps (0.2.0).
+such as `fenced_update` and result memoization are minor bumps.

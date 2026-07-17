@@ -21,7 +21,7 @@ from fencekit import (
 
 
 def test_version() -> None:
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
 
 
 def test_error_hierarchy() -> None:
