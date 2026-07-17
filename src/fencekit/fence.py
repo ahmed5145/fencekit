@@ -20,14 +20,9 @@ class FenceGate:
     one atomic script. :meth:`check` is diagnostic only: a separate write after
     a check has a time-of-check/time-of-use race.
 
-    For PostgreSQL (or other stores), reject stale tokens atomically in the
-    same statement as the mutation, for example::
-
-        UPDATE analysis_job
-        SET progress = %s, fence_token = %s
-        WHERE id = %s AND fence_token <= %s
-
-    Redis alone does not protect writes that bypass this gate.
+    For PostgreSQL / Django rows, use :func:`fencekit.storage.fenced_update`
+    so the token comparison and mutation share one ``UPDATE``. Redis alone
+    does not protect writes that bypass this gate.
     """
 
     def __init__(
