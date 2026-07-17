@@ -71,9 +71,7 @@ def fenced_update(
     if not updates:
         raise ValueError("updates must be non-empty")
     if fence_field in updates:
-        raise ValueError(
-            f"{fence_field!r} is set from the token; omit it from updates"
-        )
+        raise ValueError(f"{fence_field!r} is set from the token; omit it from updates")
 
     payload = dict(updates)
     payload[fence_field] = token.value

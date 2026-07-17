@@ -42,12 +42,16 @@ Changelog = "https://github.com/ahmed5145/fencekit/blob/main/CHANGELOG.md"
 Repository = "https://github.com/ahmed5145/fencekit"
 
 [project.optional-dependencies]
+django = [
+    "django>=4.2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
     "hypothesis>=6.100",
     "ruff>=0.8",
     "mypy>=1.13",
+    "django>=4.2",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -90,6 +94,10 @@ select = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["fencekit"]
+
+[tool.ruff.lint.per-file-ignores]
+# Django must be configured before model imports.
+"tests/unit/test_django_storage.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"
