@@ -135,7 +135,8 @@ uses that ownership rule and does not implement Redlock.
 |-------|--------|
 | At-most-once *start* within the idempotency TTL (Redis up) | Yes |
 | Mutual exclusion while lease held (single primary) | Best-effort |
-| Stale holder cannot mutate via atomic `set_if_fresh` | Yes |
+| Stale holder cannot mutate via atomic `set_if_fresh` | Yes (Redis strings) |
+| Stale holder cannot mutate via `fenced_update` / SQL | Yes (when used) |
 | Exactly-once delivery | No |
 | HA / failover / Redlock safety | No |
 | Writes that skip the token | No |
@@ -159,11 +160,12 @@ a card charge, execute exactly once.
    waits use the client monotonic clock only.
 4. Cooperative storage. Postgres (or S3, etc.) must also compare tokens in
    the mutation itself. A separate preflight check cannot protect another store.
+   For Django, use :func:`fencekit.storage.fenced_update` (or the SQL below).
 5. GC pause > TTL. A newer token fences out the paused holder after its lease
    expires.
 6. Idempotency TTL. Too short means a duplicate begin after expiry. Too long can
    leave a key stuck in `pending` if a worker dies without `mark_done`/`clear`.
-   Align with the job SLA; v0.2 may add explicit takeover rules.
+   Align with the job SLA; a later release may add explicit takeover rules.
 7. Counter persistence and overflow. Fence counters intentionally do not
    expire. Deleting/restoring/rolling them back can reuse old token values and
    breaks monotonicity. Redis integer overflow makes acquisition fail safely
@@ -212,15 +214,34 @@ not log Redis URLs or credentials. v0.1 treats Redis as trusted infrastructure,
 so production deployments should restrict it with network controls and Redis
 ACLs.
 
-## Postgres pattern (app-owned)
+## Postgres / Django pattern
+
+Prefer the helper when using Django QuerySets:
+
+```python
+from fencekit import fenced_update
+
+ok = fenced_update(
+    AnalysisJob.objects.filter(pk=job_id),
+    handle.token,
+    updates={"progress": 50, "status": "running"},
+)
+# ok is False (or FencedOutError if raise_on_stale=True) when stale or missing
+```
+
+Equivalent SQL:
 
 ```sql
 UPDATE analysis_job
 SET progress = %(progress)s, fence_token = %(token)s
 WHERE id = %(id)s AND fence_token <= %(token)s;
--- rowcount 0 => fenced out
+-- rowcount 0 => fenced out (or missing row)
 ```
+
+Add a `fence_token` integer column (default `0`) on rows that durable workers
+update under a lock. Redis `FenceGate` does not protect these rows by itself.
 
 ## Versioning
 
-Semver from 0.1.0. Breaking API changes bump minor while 0.x.
+Semver from 0.1.0. Breaking API changes bump minor while 0.x. Additive helpers
+such as `fenced_update` are minor bumps (0.2.0).

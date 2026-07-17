@@ -15,6 +15,7 @@ from fencekit.errors import (
 from fencekit.fence import FenceGate
 from fencekit.idempotency import IdempotencyGuard
 from fencekit.lock import DistributedLock
+from fencekit.storage import SupportsFencedUpdate, fenced_update
 from fencekit.types import FenceToken, LockHandle
 
 __all__ = [
@@ -30,9 +31,11 @@ __all__ = [
     "LockNotAcquired",
     "LockNotOwned",
     "RedisClient",
+    "SupportsFencedUpdate",
     "SyncRedis",
     "TokenExpiredError",
     "__version__",
     "canonicalize",
+    "fenced_update",
     "idempotency_key",
 ]

@@ -19,6 +19,8 @@ Its tests reproduce worker death and lock-expiry races.
 
 ```bash
 pip install fencekit
+# optional Django helper tests / apps that want the extra declared:
+pip install "fencekit[django]"
 # or
 uv add fencekit
 ```
@@ -35,6 +37,7 @@ from fencekit import (
     DistributedLock,
     FenceGate,
     IdempotencyGuard,
+    fenced_update,
     idempotency_key,
 )
 
@@ -43,7 +46,7 @@ guard = IdempotencyGuard(r)
 lock = DistributedLock(r)
 fence = FenceGate(r)
 
-def analyze_batch() -> None:
+def analyze_batch(job) -> None:
     key = idempotency_key(
         {"game_ids": ["abc", "def"], "engine": "sf16"},
         namespace="analysis",
@@ -51,11 +54,16 @@ def analyze_batch() -> None:
     if not guard.try_begin(key, ttl=timedelta(hours=24)):
         return  # already started or completed
 
-    handle = lock.acquire("analysis:batch-42", ttl=timedelta(minutes=5))
+    handle = lock.acquire(f"analysis:{job.pk}", ttl=timedelta(minutes=5))
     try:
-        # Atomic fence check + Redis progress write:
-        fence.set_if_fresh(handle.token, "analysis:batch-42:status", "running")
-        # Extend the lock on heartbeats and fence every durable write.
+        # Redis progress (optional):
+        fence.set_if_fresh(handle.token, f"analysis:{job.pk}:status", "running")
+        # Durable Postgres / Django row (required for ChessMate-style state):
+        fenced_update(
+            type(job).objects.filter(pk=job.pk),
+            handle.token,
+            updates={"progress": 50, "status": "running"},
+        )
         guard.mark_done(key)
     finally:
         lock.release(handle)
@@ -67,17 +75,18 @@ def analyze_batch() -> None:
 |-------|--------|
 | At-most-once *start* within the idempotency TTL (Redis available) | Yes (`SET NX`) |
 | Mutual exclusion while lock TTL held (single Redis primary) | Best-effort lease |
-| Stale holder cannot overwrite via atomic `FenceGate.set_if_fresh` | Yes |
+| Stale holder cannot overwrite via atomic `FenceGate.set_if_fresh` | Yes (Redis strings) |
+| Stale holder cannot overwrite via `fenced_update` / equivalent SQL | Yes (when used) |
 | Exactly-once delivery | No |
-| Safety under Redis failover / split brain | No (v0.1) |
+| Safety under Redis failover / split brain | No (v0.2) |
 | Safety if the app writes without presenting the token | No |
 
 See [DESIGN.md](DESIGN.md) for the threat model, Lua algorithms, TTL guidance, and
 crash/restart semantics. fencekit does not implement Redlock.
 
-Fencing covers stale overwrites. Exactly-once external effects also require the
-destination to enforce the fence token and a unique business-operation key in
-one atomic operation.
+Fencing covers stale overwrites only when the destination enforces the token in
+the same operation as the write. Redis helpers do not protect Postgres rows;
+use `fenced_update` (or the raw SQL pattern in DESIGN.md) for Django models.
 
 ## Running tests
 
@@ -99,6 +108,8 @@ python -m pytest -q
 ```
 
 Integration tests skip cleanly when Redis is unreachable or `FENCEKIT_REDIS_URL` is unset.
+Django ORM fencing tests run whenever Django is installed (`pip install -e ".[dev]"`
+or `.[django]`).
 
 ```bash
 # Linux/macOS with uv + Docker
@@ -109,7 +120,7 @@ export FENCEKIT_REDIS_URL=redis://localhost:6379/15
 uv run pytest
 ```
 
-v0.1 has no Celery adapter. A later release may add one as an optional extra.
+v0.2 has no Celery adapter. A later release may add one as an optional extra.
 
 ## License
 
