@@ -1,33 +1,34 @@
 # fencekit
 
-Redis-backed idempotency and fenced locks for background jobs. A destination that
-atomically checks the fencing token can reject writes from a stale lock holder.
+[![CI](https://github.com/ahmed5145/fencekit/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed5145/fencekit/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fencekit.svg)](https://pypi.org/project/fencekit/)
+[![Python](https://img.shields.io/pypi/pyversions/fencekit.svg)](https://pypi.org/project/fencekit/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Why
+Redis-backed idempotency and **fenced** distributed locks for background jobs.
 
-ChessMate ([chess-mate.online](https://chess-mate.online)) runs imported games
-through Stockfish before writing a coaching report. With Redis as the Celery broker
-and late acknowledgements enabled, a worker crash can cause the same job to be
-delivered again. I saw batches progress twice. That wasted Stockfish CPU and left
-the recorded progress ambiguous.
+Celery with `acks_late` redelivers work after a worker crash. Redis gives you
+primitives (`SET NX`, Lua). fencekit wires them into three tested pieces:
 
-Celery requires late-ack tasks to be idempotent, but each task still needs code to
-enforce that property. fencekit collects the Redis operations I used in ChessMate.
-Its tests reproduce worker death and lock-expiry races.
+| Piece | Problem it solves |
+|-------|-------------------|
+| `IdempotencyGuard` | Double-start / redelivery of the same logical job |
+| `DistributedLock` + fencing token | Two workers on the same resource at once |
+| `FenceGate` / `fenced_update` | Stale lock holder overwriting newer state after TTL expiry |
+
+Extracted from [ChessMate](https://chess-mate.online) (Celery + Redis + Postgres).
+See [DESIGN.md](DESIGN.md) for guarantees, non-guarantees, and crash semantics.
 
 ## Install
 
 ```bash
 pip install fencekit
-# optional Django helper tests / apps that want the extra declared:
-pip install "fencekit[django]"
-# or
-uv add fencekit
+pip install "fencekit[django]"   # optional Django QuerySet helper
 ```
 
 Requires Redis 6+ (tested with Redis 7) and Python 3.10+.
 
-## 30-second example
+## Quick example
 
 ```python
 from datetime import timedelta
@@ -47,23 +48,20 @@ guard = IdempotencyGuard(r)
 lock = DistributedLock(r)
 fence = FenceGate(r)
 
-def analyze_batch(job) -> None:
+def analyze_batch(job) -> dict | None:
     key = idempotency_key(
         {"game_ids": ["abc", "def"], "engine": "sf16"},
         namespace="analysis",
     )
     if not guard.try_begin(key, ttl=timedelta(hours=24)):
-        # Already started or completed; return a prior memo when present.
         try:
-            return guard.get_result(key)
+            return guard.get_result(key)  # prior outcome on redelivery
         except IdempotencyResultMissing:
-            return
+            return None  # still pending or done without a memo
 
     handle = lock.acquire(f"analysis:{job.pk}", ttl=timedelta(minutes=5))
     try:
-        # Redis progress (optional):
         fence.set_if_fresh(handle.token, f"analysis:{job.pk}:status", "running")
-        # Durable Postgres / Django row (required for ChessMate-style state):
         fenced_update(
             type(job).objects.filter(pk=job.pk),
             handle.token,
@@ -76,59 +74,56 @@ def analyze_batch(job) -> None:
         lock.release(handle)
 ```
 
-## Guarantees
+## API overview
+
+- **`idempotency_key(payload, namespace=...)`** — deterministic key from JSON-canonicalized payload
+- **`IdempotencyGuard.try_begin` / `mark_done` / `get_result`** — at-most-once start; optional JSON memo on completion
+- **`DistributedLock.acquire` / `release` / `extend`** — lease + monotonic fencing token (Lua)
+- **`FenceGate.set_if_fresh`** — atomic fenced Redis string writes
+- **`fenced_update(queryset, token, updates=...)`** — fenced Django/Postgres `UPDATE` in one statement
+
+Typed public API (`py.typed`). No Celery adapter yet; wire the guard in your task body for now.
+
+## Guarantees (honest)
 
 | Claim | Status |
 |-------|--------|
-| At-most-once *start* within the idempotency TTL (Redis available) | Yes (`SET NX`) |
+| At-most-once *start* within idempotency TTL | Yes (`SET NX`) |
+| Memoized result after `mark_done(..., result=...)` | Yes (within TTL) |
 | Mutual exclusion while lock TTL held (single Redis primary) | Best-effort lease |
-| Stale holder cannot overwrite via atomic `FenceGate.set_if_fresh` | Yes (Redis strings) |
-| Stale holder cannot overwrite via `fenced_update` / equivalent SQL | Yes (when used) |
-| Exactly-once delivery | No |
-| Safety under Redis failover / split brain | No (v0.3) |
-| Safety if the app writes without presenting the token | No |
-| Memoized result available after `mark_done(..., result=...)` | Yes (within TTL) |
+| Stale holder blocked via `FenceGate` / `fenced_update` | Yes (when used) |
+| Exactly-once delivery | **No** |
+| Safety under Redis failover / split brain | **No** |
+| Writes that skip the fencing token | **No** |
 
-See [DESIGN.md](DESIGN.md) for the threat model, Lua algorithms, TTL guidance, and
-crash/restart semantics. fencekit does not implement Redlock.
+fencekit does not implement Redlock. Fencing only works when the storage layer
+checks the token in the same operation as the write.
 
-Fencing covers stale overwrites only when the destination enforces the token in
-the same operation as the write. Redis helpers do not protect Postgres rows;
-use `fenced_update` (or the raw SQL pattern in DESIGN.md) for Django models.
-
-## Running tests
+## Development
 
 ```bat
-REM CMD (Windows), no uv required
-cd fencekit
+REM Windows (CMD)
 python -m pip install -e ".[dev]"
-python -m ruff check --fix src tests
 python -m ruff check src tests
 python -m mypy src
 python -m pytest -m "not integration" -q
 ```
 
-The full suite needs Redis on `localhost:6379`:
+Full suite (Redis on `localhost:6379`):
 
 ```bat
 set FENCEKIT_REDIS_URL=redis://localhost:6379/15
 python -m pytest -q
 ```
 
-Integration tests skip cleanly when Redis is unreachable or `FENCEKIT_REDIS_URL` is unset.
-Django ORM fencing tests run whenever Django is installed (`pip install -e ".[dev]"`
-or `.[django]`).
-
 ```bash
-# Linux/macOS with uv + Docker
+# Linux/macOS with uv
 uv sync --extra dev
-uv run pytest -m "not integration"
-docker run -d -p 6379:6379 --name fencekit-redis redis:7
-export FENCEKIT_REDIS_URL=redis://localhost:6379/15
 uv run pytest
 ```
 
-v0.3 has no Celery adapter. A later release may add one as an optional extra.
+CI runs lint, type-check, and tests on Python 3.10–3.13 with Redis. Releases
+publish to PyPI via [Trusted Publishing](RELEASING.md) (OIDC, no long-lived token).
 
 ## License
 
