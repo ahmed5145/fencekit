@@ -24,6 +24,7 @@ See [DESIGN.md](DESIGN.md) for guarantees, non-guarantees, and crash semantics.
 ```bash
 pip install fencekit
 pip install "fencekit[django]"   # optional Django QuerySet helper
+pip install "fencekit[celery]"   # optional Celery task decorator
 ```
 
 Requires Redis 6+ (tested with Redis 7) and Python 3.10+.
@@ -35,6 +36,7 @@ from datetime import timedelta
 from redis import Redis
 
 from fencekit import (
+    BeginOutcome,
     DistributedLock,
     FenceGate,
     IdempotencyGuard,
@@ -53,13 +55,19 @@ def analyze_batch(job) -> dict | None:
         {"game_ids": ["abc", "def"], "engine": "sf16"},
         namespace="analysis",
     )
-    if not guard.try_begin(key, ttl=timedelta(hours=24)):
+    resource = f"analysis:{job.pk}"
+    outcome = guard.try_begin_or_reclaim(
+        key, lock=lock, lock_resource=resource, ttl=timedelta(hours=24)
+    )
+    if outcome == BeginOutcome.ALREADY_DONE:
         try:
-            return guard.get_result(key)  # prior outcome on redelivery
+            return guard.get_result(key)
         except IdempotencyResultMissing:
-            return None  # still pending or done without a memo
+            return None
+    if outcome == BeginOutcome.IN_PROGRESS:
+        return None  # active worker holds the lock
 
-    handle = lock.acquire(f"analysis:{job.pk}", ttl=timedelta(minutes=5))
+    handle = lock.acquire(resource, ttl=timedelta(minutes=5), owner_id=guard.owner_id)
     try:
         fence.set_if_fresh(handle.token, f"analysis:{job.pk}:status", "running")
         fenced_update(
@@ -78,7 +86,7 @@ def analyze_batch(job) -> dict | None:
 
 `idempotency_key(payload, namespace=...)`: deterministic key from JSON-canonicalized payload.
 
-`IdempotencyGuard.try_begin` / `mark_done` / `get_result`: at-most-once start; optional JSON memo on completion.
+`IdempotencyGuard.try_begin` / `try_begin_or_reclaim` / `mark_done` / `get_result`: at-most-once start; reclaim stale pending after crash; optional JSON memo on completion.
 
 `DistributedLock.acquire` / `release` / `extend`: lease plus monotonic fencing token (Lua).
 
@@ -86,7 +94,32 @@ def analyze_batch(job) -> dict | None:
 
 `fenced_update(queryset, token, updates=...)`: fenced Django/Postgres `UPDATE` in one statement.
 
-Typed public API (`py.typed`). No Celery adapter yet; wire the guard in your task body for now.
+Typed public API (`py.typed`). Optional Celery helper: `fencekit.celery.idempotent_task`.
+
+### Celery (optional)
+
+```python
+from datetime import timedelta
+
+from fencekit.celery import idempotent_task
+from fencekit import DistributedLock, IdempotencyGuard, idempotency_key
+
+guard = IdempotencyGuard(redis)
+lock = DistributedLock(redis)
+
+@shared_task(bind=True)
+@idempotent_task(
+    guard,
+    lock,
+    key=lambda batch_id: idempotency_key({"batch_id": batch_id}, namespace="analysis"),
+    lock_resource=lambda batch_id: f"analysis:{batch_id}",
+    idempotency_ttl=timedelta(hours=24),
+    lock_ttl=timedelta(minutes=5),
+    retry_on_in_progress=True,
+)
+def analyze_batch(self, batch_id: str) -> dict:
+    ...
+```
 
 ## Comparison
 

@@ -15,7 +15,7 @@ Re-check before you ship.
 
 | | Dedup / at-most-once start | Celery integration | Fencing stale writes | Postgres helper | Result memo | Guarantee docs |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| fencekit | Yes (`SET NX` + owner) | Manual (adapter planned) | Yes | `fenced_update` | `get_result` | [DESIGN.md](../DESIGN.md) |
+| fencekit | Yes (`SET NX` + owner) | Yes (`idempotent_task`) | Yes | `fenced_update` | `get_result` | [DESIGN.md](../DESIGN.md) |
 | celery-once | Yes (lock at queue time) | Yes (`QueueOnce`) | No | No | No | Minimal |
 | celery-singleton | Yes (lock at queue time) | Yes (`Singleton`) | No | No | No | Minimal |
 | celery-once-task | Yes (queue + running locks) | Yes (base task) | No | No | No | README only |
@@ -48,11 +48,10 @@ races. [DESIGN.md](../DESIGN.md) lists non-guarantees (no Redlock, no exactly-on
 cooperative storage). `mark_done(..., result=...)` plus `get_result` let a
 redelivery return a prior JSON outcome.
 
-Limits: no Celery decorator yet (wire `try_begin`, lock, and fence in the task
-body). Postgres fencing needs a `fence_token` column and `fenced_update` (or
-equivalent SQL). Single Redis primary; failover can break lease or fence
-monotonicity (documented). Pending reclaim after crash-without-`mark_done` is not
-implemented yet.
+Limits: Postgres fencing needs a `fence_token` column and `fenced_update` (or
+equivalent SQL). Reclaim only runs when the lock key is absent; an active holder
+blocks takeover. Single Redis primary; failover can break lease or fence
+monotonicity (documented).
 
 ## celery-once
 
