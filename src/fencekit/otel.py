@@ -24,7 +24,7 @@ def otel_hooks(*, tracer_name: str = "fencekit") -> FenceKitHooks:
             "fencekit.otel requires the otel extra: pip install 'fencekit[otel]'"
         ) from None
 
-    from opentelemetry import trace  # type: ignore[import-not-found]
+    from opentelemetry import trace  # type: ignore[import-not-found,unused-ignore]
 
     tracer = trace.get_tracer(tracer_name)
 
