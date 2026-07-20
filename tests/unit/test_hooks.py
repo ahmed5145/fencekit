@@ -23,9 +23,11 @@ class _FakeRedis:
         value: str,
         *,
         nx: bool = False,
+        xx: bool = False,
         ex: int | None = None,
+        px: int | None = None,
     ) -> bool:
-        del ex
+        del xx, ex, px
         if nx and key in self._data:
             return False
         self._data[key] = value
@@ -48,12 +50,15 @@ class _FakeRedis:
 
 
 def test_key_label_truncates_long_keys() -> None:
-    assert key_label("abcdefghijklmnop") == "...klmnop"
+    assert key_label("abcdefghijklmnop") == "...efghijklmnop"
+    assert key_label("short") == "short"
 
 
 def test_hooks_idempotency_begin_fires() -> None:
     events: list[tuple[str, bool]] = []
-    hooks = FenceKitHooks(on_idempotency_begin=events.append)
+    hooks = FenceKitHooks(
+        on_idempotency_begin=lambda key, won: events.append((key, won)),
+    )
     guard = IdempotencyGuard(_FakeRedis(), prefix="t", hooks=hooks)
 
     assert guard.try_begin("job-1", ttl=timedelta(seconds=30)) is True
@@ -90,7 +95,9 @@ def test_hooks_idempotency_outcome_on_reclaim_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     outcomes: list[tuple[str, BeginOutcome]] = []
-    hooks = FenceKitHooks(on_idempotency_outcome=outcomes.append)
+    hooks = FenceKitHooks(
+        on_idempotency_outcome=lambda key, outcome: outcomes.append((key, outcome)),
+    )
     guard = IdempotencyGuard(_FakeRedis(), prefix="t", hooks=hooks)
     lock = DistributedLock(_FakeRedis(), prefix="t")
 
