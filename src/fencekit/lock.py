@@ -165,3 +165,7 @@ class DistributedLock:
             raise
         else:
             self.release(handle)
+
+    def lock_key(self, resource: str) -> str:
+        """Redis key for *resource* (pair with idempotency pending reclaim)."""
+        return self._keys.lock(resource)

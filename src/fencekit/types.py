@@ -4,6 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from enum import Enum
+
+
+class BeginOutcome(str, Enum):
+    """Result of :meth:`~fencekit.idempotency.IdempotencyGuard.try_begin_or_reclaim`."""
+
+    BEGUN = "begun"
+    """This caller won a fresh ``SET NX`` and may run the job."""
+
+    RECLAIMED = "reclaimed"
+    """The key was ``pending`` with no lock held; ownership moved to this caller."""
+
+    ALREADY_DONE = "already_done"
+    """``done``; use :meth:`~fencekit.idempotency.IdempotencyGuard.get_result`."""
+
+    IN_PROGRESS = "in_progress"
+    """Another worker holds the lock or the key state is ambiguous; do not start."""
 
 
 @dataclass(frozen=True, slots=True)

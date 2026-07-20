@@ -110,3 +110,24 @@ else
 end
 return 1
 """
+
+# KEYS[1]=idem_key, KEYS[2]=lock_key; ARGV[1]=new_owner, ARGV[2]=ttl_seconds.
+# Swap a stale pending owner when the lock key is absent (crashed worker).
+# Returns 1 reclaimed, 2 done, 3 lock held, 0 absent/unknown.
+RECLAIM_PENDING_SCRIPT = """
+local val = redis.call('GET', KEYS[1])
+if val == false then
+  return 0
+end
+if val == 'done' then
+  return 2
+end
+if string.sub(val, 1, 8) ~= 'pending:' then
+  return 0
+end
+if redis.call('EXISTS', KEYS[2]) == 1 then
+  return 3
+end
+redis.call('SET', KEYS[1], 'pending:' .. ARGV[1], 'EX', tonumber(ARGV[2]))
+return 1
+"""

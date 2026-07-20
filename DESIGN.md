@@ -52,6 +52,11 @@ pending, done without a memo, or the memo expired. A successful `try_begin`
 also deletes a leftover result key so a stale memo cannot outlive a reclaimed
 idempotency entry.
 
+`try_begin_or_reclaim` tries `try_begin` first, then atomically swaps
+`pending:{old_owner}` to `pending:{new_owner}` when the companion lock key is
+absent. If the lock key exists, another worker is active and the outcome is
+`IN_PROGRESS`. Pair the same `lock_resource` string used in `DistributedLock.acquire`.
+
 Canonicalization rules:
 
 - top-level payload and nested objects are mappings with string keys;
@@ -180,7 +185,9 @@ a card charge, execute exactly once.
    expires.
 6. Idempotency TTL. Too short means a duplicate begin after expiry. Too long can
    leave a key stuck in `pending` if a worker dies without `mark_done`/`clear`.
-   Align with the job SLA; a later release may add explicit takeover rules.
+   Align with the job SLA. Use `try_begin_or_reclaim` with the same lock resource
+   to take over when the lock key is absent; while the lock is held, reclaim is
+   refused (`BeginOutcome.IN_PROGRESS`).
 7. Counter persistence and overflow. Fence counters intentionally do not
    expire. Deleting/restoring/rolling them back can reuse old token values and
    breaks monotonicity. Redis integer overflow makes acquisition fail safely
@@ -198,8 +205,10 @@ a card charge, execute exactly once.
 2. Kill after TTL: new owner gets higher token; stale atomic fenced writes
    fail (`FencedOutError`). See `tests/property/test_fencing_expiry.py`.
 3. Celery redelivery: same idempotency key means `try_begin` is False while TTL
-   holds. If the first run stored a memo, `get_result` returns it; otherwise the
-   caller only learns that work is pending or done without a payload.
+   holds. If the first run stored a memo, `get_result` returns it. If the first
+   worker died without `mark_done` and without holding the lock, call
+   `try_begin_or_reclaim` to swap the pending owner. While the lock is held,
+   outcome is `IN_PROGRESS`.
 4. Partial side effects (temp files, half-written rows) remain an application
    concern; fence every durable mutation.
 

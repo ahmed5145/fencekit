@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - Unreleased
+
+### Added
+
+- `IdempotencyGuard.try_begin_or_reclaim`: take over a stale `pending` key when the
+  lock is free (worker crash without `mark_done`)
+- `BeginOutcome` enum for begin / reclaim / done / in-progress results
+- `IdempotencyGuard.owner_id` and `DistributedLock.lock_key` for lock pairing
+- Optional Celery decorator: `fencekit.celery.idempotent_task` (`pip install fencekit[celery]`)
+
 ## [0.4.0] - 2026-07-20
 
 ### Added
