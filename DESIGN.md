@@ -14,6 +14,23 @@ run twice. Duplicate runs wasted Stockfish CPU and left the saved progress ambig
 fencekit contains the Redis operations pulled from those tasks. Its tests reproduce
 worker death and lock-expiry races.
 
+## Architecture
+
+```mermaid
+flowchart TD
+  T[Celery task redelivery] --> B{try_begin_or_reclaim}
+  B -->|BEGUN or RECLAIMED| L[DistributedLock.acquire]
+  B -->|ALREADY_DONE| R[get_result memo]
+  B -->|IN_PROGRESS| S[skip or retry]
+  L --> W[Work under lock]
+  W --> F[FenceGate / fenced_update]
+  F --> D[mark_done + optional result memo]
+  L -->|TTL expires| X[Stale holder fenced out]
+```
+
+Solid arrows are the happy path. After lock TTL expiry, a new worker gets a higher
+fencing token; stale writes fail at the gate or in Postgres.
+
 ## Threat model
 
 Trusted: Redis is trusted infrastructure in v0.1 (no authz inside the library;
@@ -211,6 +228,16 @@ a card charge, execute exactly once.
    outcome is `IN_PROGRESS`.
 4. Partial side effects (temp files, half-written rows) remain an application
    concern; fence every durable mutation.
+
+## Observability
+
+Optional :class:`~fencekit.hooks.FenceKitHooks` on ``IdempotencyGuard``,
+``DistributedLock``, and ``FenceGate``. Callbacks fire on begin/outcome/done,
+lock acquire/release/failure, and fence advance/reject. Hook bodies must not
+raise; fencekit swallows exceptions so telemetry cannot break jobs.
+
+For OpenTelemetry, ``fencekit.otel.otel_hooks()`` returns hooks that emit spans
+(``pip install fencekit[otel]``). The SDK and exporter setup stay in the host app.
 
 ## TTL guidance
 

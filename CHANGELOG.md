@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - Unreleased
+## [0.6.0] - 2026-07-20
+
+### Added
+
+- `FenceKitHooks` optional callbacks on `IdempotencyGuard`, `DistributedLock`, and
+  `FenceGate` for logging, metrics, or tracing
+- `fencekit.otel.otel_hooks()` factory (`pip install fencekit[otel]`)
+- Architecture flow diagram in [DESIGN.md](DESIGN.md)
+- Test count badge in README
+
+## [0.5.0] - 2026-07-20
 
 ### Added
 

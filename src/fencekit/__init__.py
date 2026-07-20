@@ -14,6 +14,7 @@ from fencekit.errors import (
     TokenExpiredError,
 )
 from fencekit.fence import FenceGate
+from fencekit.hooks import FenceKitHooks
 from fencekit.idempotency import IdempotencyGuard
 from fencekit.lock import DistributedLock
 from fencekit.storage import SupportsFencedUpdate, fenced_update
@@ -23,6 +24,7 @@ __all__ = [
     "BeginOutcome",
     "CanonicalizeError",
     "DistributedLock",
+    "FenceKitHooks",
     "FenceGate",
     "FenceKitError",
     "FenceToken",

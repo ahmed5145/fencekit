@@ -10,6 +10,7 @@ from datetime import timedelta
 
 from fencekit.client import RedisClient, SyncRedis, integer_response
 from fencekit.errors import LockNotAcquired, LockNotOwned
+from fencekit.hooks import FenceKitHooks
 from fencekit.keys import DEFAULT_PREFIX, KeySpace
 from fencekit.scripts import ACQUIRE_SCRIPT, EXTEND_SCRIPT, RELEASE_SCRIPT
 from fencekit.types import FenceToken, LockHandle
@@ -39,9 +40,11 @@ class DistributedLock:
         redis: SyncRedis | RedisClient,
         *,
         prefix: str = DEFAULT_PREFIX,
+        hooks: FenceKitHooks | None = None,
     ) -> None:
         self._client = redis if isinstance(redis, RedisClient) else RedisClient(redis)
         self._keys = KeySpace(prefix)
+        self._hooks = hooks or FenceKitHooks()
 
     def acquire(
         self,
@@ -75,8 +78,10 @@ class DistributedLock:
             if handle is not None:
                 return handle
             if not blocking or deadline is None:
+                self._hooks.lock_acquire_failed(resource)
                 raise LockNotAcquired(f"could not acquire lock for {resource!r}")
             if time.monotonic() >= deadline:
+                self._hooks.lock_acquire_failed(resource)
                 raise LockNotAcquired(
                     f"timed out waiting for lock {resource!r} after {wait}"
                 )
@@ -102,6 +107,7 @@ class DistributedLock:
         if result is None or result is False:
             return None
         token_value = integer_response(result)
+        self._hooks.lock_acquired(resource, token_value)
         return LockHandle(
             resource=resource,
             owner_id=owner_id,
@@ -122,6 +128,7 @@ class DistributedLock:
             raise LockNotOwned(
                 f"cannot release lock {handle.resource!r}: not owned or expired"
             )
+        self._hooks.lock_released(handle.resource)
 
     def extend(self, handle: LockHandle, *, ttl: timedelta) -> None:
         """Extend lock TTL if still owned (heartbeat)."""
