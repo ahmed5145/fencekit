@@ -3,6 +3,7 @@
 [![CI](https://github.com/ahmed5145/fencekit/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed5145/fencekit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/fencekit.svg)](https://pypi.org/project/fencekit/)
 [![Python](https://img.shields.io/pypi/pyversions/fencekit.svg)](https://pypi.org/project/fencekit/)
+[![tests](https://img.shields.io/badge/tests-63-brightgreen)](https://github.com/ahmed5145/fencekit/tree/main/tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Redis-backed idempotency and fenced distributed locks for background jobs.
@@ -25,6 +26,7 @@ See [DESIGN.md](DESIGN.md) for guarantees, non-guarantees, and crash semantics.
 pip install fencekit
 pip install "fencekit[django]"   # optional Django QuerySet helper
 pip install "fencekit[celery]"   # optional Celery task decorator
+pip install "fencekit[otel]"     # optional OpenTelemetry hook factory
 ```
 
 Requires Redis 6+ (tested with Redis 7) and Python 3.10+.
@@ -95,6 +97,21 @@ def analyze_batch(job) -> dict | None:
 `fenced_update(queryset, token, updates=...)`: fenced Django/Postgres `UPDATE` in one statement.
 
 Typed public API (`py.typed`). Optional Celery helper: `fencekit.celery.idempotent_task`.
+
+### Observability (optional)
+
+Pass :class:`~fencekit.hooks.FenceKitHooks` to ``IdempotencyGuard``, ``DistributedLock``, and ``FenceGate``, or use the OTel factory:
+
+```python
+from fencekit import DistributedLock, FenceKitHooks, IdempotencyGuard
+from fencekit.otel import otel_hooks
+
+hooks = otel_hooks()  # pip install "fencekit[otel]"
+guard = IdempotencyGuard(redis, hooks=hooks)
+lock = DistributedLock(redis, hooks=hooks)
+```
+
+Hook callbacks must not raise; fencekit swallows errors so metrics cannot break jobs.
 
 ### Celery (optional)
 

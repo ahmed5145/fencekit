@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fencekit.client import RedisClient, SyncRedis, integer_response
 from fencekit.errors import FencedOutError
+from fencekit.hooks import FenceKitHooks
 from fencekit.keys import DEFAULT_PREFIX, KeySpace
 from fencekit.scripts import (
     FENCE_ADVANCE_SCRIPT,
@@ -30,9 +31,11 @@ class FenceGate:
         redis: SyncRedis | RedisClient,
         *,
         prefix: str = DEFAULT_PREFIX,
+        hooks: FenceKitHooks | None = None,
     ) -> None:
         self._client = redis if isinstance(redis, RedisClient) else RedisClient(redis)
         self._keys = KeySpace(prefix)
+        self._hooks = hooks or FenceKitHooks()
 
     def current_max(self, resource: str) -> int:
         """Return the highest token accepted for *resource* (0 if none)."""
@@ -56,6 +59,7 @@ class FenceGate:
             token.value,
         )
         if integer_response(result) != 1:
+            self._hooks.fence_rejected(token.resource, token.value)
             raise FencedOutError(
                 f"token {token.value} for {token.resource!r} is fenced out "
                 f"(max={self.current_max(token.resource)})"
@@ -75,10 +79,12 @@ class FenceGate:
             token.value,
         )
         if integer_response(result) != 1:
+            self._hooks.fence_rejected(token.resource, token.value)
             raise FencedOutError(
                 f"token {token.value} for {token.resource!r} is fenced out "
                 f"(max={self.current_max(token.resource)})"
             )
+        self._hooks.fence_advanced(token.resource, token.value)
 
     def set_if_fresh(self, token: FenceToken, key: str, value: str) -> None:
         """Atomically set Redis *key* when *token* is not stale.
@@ -103,7 +109,9 @@ class FenceGate:
             value,
         )
         if integer_response(result) != 1:
+            self._hooks.fence_rejected(token.resource, token.value)
             raise FencedOutError(
                 f"token {token.value} for {token.resource!r} is fenced out "
                 f"(max={self.current_max(token.resource)})"
             )
+        self._hooks.fence_advanced(token.resource, token.value)

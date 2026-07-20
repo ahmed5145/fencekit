@@ -9,6 +9,7 @@ from typing import Any
 from fencekit.canonicalize import dumps_json, loads_json
 from fencekit.client import RedisClient, SyncRedis, integer_response
 from fencekit.errors import IdempotencyNotOwned, IdempotencyResultMissing
+from fencekit.hooks import FenceKitHooks
 from fencekit.keys import DEFAULT_PREFIX, KeySpace
 from fencekit.lock import DistributedLock
 from fencekit.scripts import MARK_DONE_SCRIPT, RECLAIM_PENDING_SCRIPT
@@ -42,10 +43,12 @@ class IdempotencyGuard:
         *,
         prefix: str = DEFAULT_PREFIX,
         owner_id: str | None = None,
+        hooks: FenceKitHooks | None = None,
     ) -> None:
         self._client = redis if isinstance(redis, RedisClient) else RedisClient(redis)
         self._keys = KeySpace(prefix)
         self._owner_id = owner_id or str(uuid.uuid4())
+        self._hooks = hooks or FenceKitHooks()
 
     @property
     def owner_id(self) -> str:
@@ -64,6 +67,7 @@ class IdempotencyGuard:
         if won:
             # Drop a leftover memo if a previous done key expired first.
             self._client.delete(self._keys.idempotency_result(key))
+        self._hooks.idempotency_begin(key, won)
         return won
 
     def try_begin_or_reclaim(
@@ -87,16 +91,16 @@ class IdempotencyGuard:
             raise TypeError("lock must be a DistributedLock instance")
 
         if self.status(key) == "done":
-            return BeginOutcome.ALREADY_DONE
+            return self._outcome(key, BeginOutcome.ALREADY_DONE)
         if self.try_begin(key, ttl=ttl):
-            return BeginOutcome.BEGUN
+            return self._outcome(key, BeginOutcome.BEGUN)
 
         if self.status(key) != "pending":
             if self.status(key) == "done":
-                return BeginOutcome.ALREADY_DONE
+                return self._outcome(key, BeginOutcome.ALREADY_DONE)
             if self.try_begin(key, ttl=ttl):
-                return BeginOutcome.BEGUN
-            return BeginOutcome.IN_PROGRESS
+                return self._outcome(key, BeginOutcome.BEGUN)
+            return self._outcome(key, BeginOutcome.IN_PROGRESS)
 
         idem_key = self._keys.idempotency(key)
         lock_key = lock.lock_key(lock_resource)
@@ -112,10 +116,14 @@ class IdempotencyGuard:
         )
         if code == 1:
             self._client.delete(self._keys.idempotency_result(key))
-            return BeginOutcome.RECLAIMED
+            return self._outcome(key, BeginOutcome.RECLAIMED)
         if code == 2:
-            return BeginOutcome.ALREADY_DONE
-        return BeginOutcome.IN_PROGRESS
+            return self._outcome(key, BeginOutcome.ALREADY_DONE)
+        return self._outcome(key, BeginOutcome.IN_PROGRESS)
+
+    def _outcome(self, key: str, outcome: BeginOutcome) -> BeginOutcome:
+        self._hooks.idempotency_outcome(key, outcome)
+        return outcome
 
     def mark_done(
         self,
@@ -158,6 +166,7 @@ class IdempotencyGuard:
             raise IdempotencyNotOwned(
                 f"cannot complete idempotency key {key!r}: not owned or expired"
             )
+        self._hooks.idempotency_done(key, result is not _MISSING)
 
     def get_result(self, key: str) -> Any:
         """Return the memoized result for a completed *key*.

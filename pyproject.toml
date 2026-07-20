@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fencekit"
-version = "0.5.0"
+version = "0.6.0"
 description = "Redis-backed idempotent task primitives: fencing tokens and distributed locks"
 readme = "README.md"
 license = "MIT"
@@ -52,6 +52,9 @@ django = [
 celery = [
     "celery>=5.3",
 ]
+otel = [
+    "opentelemetry-api>=1.20",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
@@ -60,6 +63,7 @@ dev = [
     "mypy>=1.13",
     "django>=4.2",
     "celery>=5.3",
+    "opentelemetry-api>=1.20",
 ]
 
 [tool.hatch.build.targets.wheel]
