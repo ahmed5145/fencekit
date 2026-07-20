@@ -5,8 +5,12 @@ on your PC (free locally).
 
 ## Prerequisites
 
-Docker for the Redis container. Python 3.10+ with fencekit installed from the repo
+Redis on `localhost:6379`. Options: Docker (`docker-compose.yml` in this folder),
+WSL, or a local Redis install. Python 3.10+ with fencekit installed from the repo
 root.
+
+No Docker on your machine? CI runs the full Redis test suite on every PR. These
+scripts are for when you have Redis available locally.
 
 ## Start Redis
 

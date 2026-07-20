@@ -33,7 +33,10 @@ def main() -> int:
         client.ping()
     except RedisConnectionError:
         print("Redis not reachable at", REDIS_URL)
-        print("Start it: docker compose -f examples/reference/docker-compose.yml up -d")
+        print(
+            "Start Redis on localhost:6379 (Docker compose file in this folder, "
+            "WSL, or a local Redis install)."
+        )
         return 1
 
     lock = DistributedLock(client, prefix=PREFIX)
