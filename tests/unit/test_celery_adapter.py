@@ -20,7 +20,14 @@ class _FakeRedis:
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
 
-    def set(self, key: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool:
+    def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool:
         if nx and key in self._data:
             return False
         self._data[key] = value
@@ -52,12 +59,20 @@ def test_idempotent_task_runs_and_marks_done(monkeypatch: pytest.MonkeyPatch) ->
         "try_begin_or_reclaim",
         lambda *a, **k: BeginOutcome.BEGUN,
     )
+
+    def _fake_acquire(resource: str, *, ttl: timedelta, owner_id: str) -> MagicMock:
+        token = MagicMock(value=1, resource=resource)
+        return MagicMock(
+            resource=resource,
+            owner_id=owner_id,
+            token=token,
+            ttl=ttl,
+        )
+
     monkeypatch.setattr(
         lock,
         "acquire",
-        lambda resource, *, ttl, owner_id: MagicMock(
-            resource=resource, owner_id=owner_id, token=MagicMock(value=1, resource=resource), ttl=ttl
-        ),
+        _fake_acquire,
     )
     monkeypatch.setattr(lock, "release", lambda handle: None)
     monkeypatch.setattr(guard, "mark_done", lambda key, **kw: calls.append(key))

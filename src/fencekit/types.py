@@ -17,7 +17,7 @@ class BeginOutcome(str, Enum):
     """The key was ``pending`` with no lock held; ownership moved to this caller."""
 
     ALREADY_DONE = "already_done"
-    """The key is ``done``; call :meth:`~fencekit.idempotency.IdempotencyGuard.get_result`."""
+    """Key is ``done``; use :meth:`~fencekit.idempotency.IdempotencyGuard.get_result`."""
 
     IN_PROGRESS = "in_progress"
     """Another worker holds the lock or the key state is ambiguous; do not start."""

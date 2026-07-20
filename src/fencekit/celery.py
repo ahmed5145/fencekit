@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import importlib.util
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import timedelta
@@ -39,12 +40,10 @@ def idempotent_task(
 
     Requires ``pip install 'fencekit[celery]'``.
     """
-    try:
-        import celery  # noqa: F401
-    except ImportError as exc:
+    if importlib.util.find_spec("celery") is None:
         raise ImportError(
             "fencekit.celery requires the celery extra: pip install 'fencekit[celery]'"
-        ) from exc
+        ) from None
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
