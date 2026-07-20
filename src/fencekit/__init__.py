@@ -17,9 +17,10 @@ from fencekit.fence import FenceGate
 from fencekit.idempotency import IdempotencyGuard
 from fencekit.lock import DistributedLock
 from fencekit.storage import SupportsFencedUpdate, fenced_update
-from fencekit.types import FenceToken, LockHandle
+from fencekit.types import BeginOutcome, FenceToken, LockHandle
 
 __all__ = [
+    "BeginOutcome",
     "CanonicalizeError",
     "DistributedLock",
     "FenceGate",

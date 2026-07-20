@@ -10,7 +10,9 @@ from fencekit.canonicalize import dumps_json, loads_json
 from fencekit.client import RedisClient, SyncRedis, integer_response
 from fencekit.errors import IdempotencyNotOwned, IdempotencyResultMissing
 from fencekit.keys import DEFAULT_PREFIX, KeySpace
-from fencekit.scripts import MARK_DONE_SCRIPT
+from fencekit.lock import DistributedLock
+from fencekit.scripts import MARK_DONE_SCRIPT, RECLAIM_PENDING_SCRIPT
+from fencekit.types import BeginOutcome
 
 _MISSING = object()
 
@@ -45,6 +47,11 @@ class IdempotencyGuard:
         self._keys = KeySpace(prefix)
         self._owner_id = owner_id or str(uuid.uuid4())
 
+    @property
+    def owner_id(self) -> str:
+        """Stable owner id for this guard instance (lock pairing and ``mark_done``)."""
+        return self._owner_id
+
     def try_begin(self, key: str, *, ttl: timedelta) -> bool:
         """Return True if this caller won the right to begin work for *key*."""
         redis_key = self._keys.idempotency(key)
@@ -58,6 +65,57 @@ class IdempotencyGuard:
             # Drop a leftover memo if a previous done key expired first.
             self._client.delete(self._keys.idempotency_result(key))
         return won
+
+    def try_begin_or_reclaim(
+        self,
+        key: str,
+        *,
+        lock: DistributedLock,
+        lock_resource: str,
+        ttl: timedelta,
+    ) -> BeginOutcome:
+        """Begin work or reclaim a stale ``pending`` key after a worker crash.
+
+        Use the same ``prefix`` on *lock* as on this guard. *lock_resource* is
+        the resource name passed to :meth:`~fencekit.lock.DistributedLock.acquire`.
+
+        Returns :attr:`~fencekit.types.BeginOutcome.ALREADY_DONE` when the key
+        is ``done``. Returns :attr:`~fencekit.types.BeginOutcome.IN_PROGRESS`
+        when the lock is held (active worker) or the key expired between checks.
+        """
+        if not isinstance(lock, DistributedLock):
+            raise TypeError("lock must be a DistributedLock instance")
+
+        if self.status(key) == "done":
+            return BeginOutcome.ALREADY_DONE
+        if self.try_begin(key, ttl=ttl):
+            return BeginOutcome.BEGUN
+
+        if self.status(key) != "pending":
+            if self.status(key) == "done":
+                return BeginOutcome.ALREADY_DONE
+            if self.try_begin(key, ttl=ttl):
+                return BeginOutcome.BEGUN
+            return BeginOutcome.IN_PROGRESS
+
+        idem_key = self._keys.idempotency(key)
+        lock_key = lock.lock_key(lock_resource)
+        code = integer_response(
+            self._client.eval(
+                RECLAIM_PENDING_SCRIPT,
+                2,
+                idem_key,
+                lock_key,
+                self._owner_id,
+                _ttl_seconds(ttl),
+            )
+        )
+        if code == 1:
+            self._client.delete(self._keys.idempotency_result(key))
+            return BeginOutcome.RECLAIMED
+        if code == 2:
+            return BeginOutcome.ALREADY_DONE
+        return BeginOutcome.IN_PROGRESS
 
     def mark_done(
         self,
