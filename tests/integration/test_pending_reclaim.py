@@ -25,9 +25,12 @@ def test_try_begin_or_reclaim_fresh(redis_client: tuple[Any, str]) -> None:
     key = idempotency_key({"batch": "reclaim-fresh"}, namespace="analysis")
     resource = "analysis:reclaim-fresh"
 
-    assert guard.try_begin_or_reclaim(
-        key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
-    ) == BeginOutcome.BEGUN
+    assert (
+        guard.try_begin_or_reclaim(
+            key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
+        )
+        == BeginOutcome.BEGUN
+    )
 
 
 def test_try_begin_or_reclaim_already_done(redis_client: tuple[Any, str]) -> None:
@@ -40,9 +43,12 @@ def test_try_begin_or_reclaim_already_done(redis_client: tuple[Any, str]) -> Non
     assert guard.try_begin(key, ttl=timedelta(seconds=30))
     guard.mark_done(key, result={"ok": True}, ttl=timedelta(seconds=30))
 
-    assert guard.try_begin_or_reclaim(
-        key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
-    ) == BeginOutcome.ALREADY_DONE
+    assert (
+        guard.try_begin_or_reclaim(
+            key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
+        )
+        == BeginOutcome.ALREADY_DONE
+    )
     assert guard.get_result(key) == {"ok": True}
 
 
@@ -76,9 +82,12 @@ def test_reclaim_blocked_while_lock_held(redis_client: tuple[Any, str]) -> None:
     assert owner.try_begin(key, ttl=timedelta(seconds=30))
     handle = lock.acquire(resource, ttl=timedelta(seconds=30))
     try:
-        assert other.try_begin_or_reclaim(
-            key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
-        ) == BeginOutcome.IN_PROGRESS
+        assert (
+            other.try_begin_or_reclaim(
+                key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
+            )
+            == BeginOutcome.IN_PROGRESS
+        )
     finally:
         lock.release(handle)
 
@@ -94,9 +103,12 @@ def test_dead_owner_cannot_mark_done_after_reclaim(
     resource = "analysis:reclaim-owner"
 
     assert dead.try_begin(key, ttl=timedelta(seconds=30))
-    assert alive.try_begin_or_reclaim(
-        key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
-    ) == BeginOutcome.RECLAIMED
+    assert (
+        alive.try_begin_or_reclaim(
+            key, lock=lock, lock_resource=resource, ttl=timedelta(seconds=30)
+        )
+        == BeginOutcome.RECLAIMED
+    )
 
     with pytest.raises(IdempotencyNotOwned):
         dead.mark_done(key, ttl=timedelta(seconds=30))
