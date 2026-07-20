@@ -5,10 +5,10 @@
 [![Python](https://img.shields.io/pypi/pyversions/fencekit.svg)](https://pypi.org/project/fencekit/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Redis-backed idempotency and **fenced** distributed locks for background jobs.
+Redis-backed idempotency and fenced distributed locks for background jobs.
 
 Celery with `acks_late` redelivers work after a worker crash. Redis gives you
-primitives (`SET NX`, Lua). fencekit wires them into three tested pieces:
+`SET NX` and Lua. fencekit wraps those into tested pieces:
 
 | Piece | Problem it solves |
 |-------|-------------------|
@@ -76,15 +76,46 @@ def analyze_batch(job) -> dict | None:
 
 ## API overview
 
-- **`idempotency_key(payload, namespace=...)`** — deterministic key from JSON-canonicalized payload
-- **`IdempotencyGuard.try_begin` / `mark_done` / `get_result`** — at-most-once start; optional JSON memo on completion
-- **`DistributedLock.acquire` / `release` / `extend`** — lease + monotonic fencing token (Lua)
-- **`FenceGate.set_if_fresh`** — atomic fenced Redis string writes
-- **`fenced_update(queryset, token, updates=...)`** — fenced Django/Postgres `UPDATE` in one statement
+`idempotency_key(payload, namespace=...)`: deterministic key from JSON-canonicalized payload.
+
+`IdempotencyGuard.try_begin` / `mark_done` / `get_result`: at-most-once start; optional JSON memo on completion.
+
+`DistributedLock.acquire` / `release` / `extend`: lease plus monotonic fencing token (Lua).
+
+`FenceGate.set_if_fresh`: atomic fenced Redis string writes.
+
+`fenced_update(queryset, token, updates=...)`: fenced Django/Postgres `UPDATE` in one statement.
 
 Typed public API (`py.typed`). No Celery adapter yet; wire the guard in your task body for now.
 
-## Guarantees (honest)
+## Comparison
+
+Short view. Sources and nuance: [docs/COMPARISON.md](docs/COMPARISON.md).
+
+| | Dedup start | Celery plugin | Stale-write fencing | Postgres helper |
+|---|:---:|:---:|:---:|:---:|
+| fencekit | Yes | Manual | Yes | `fenced_update` |
+| celery-once / celery-singleton | Yes | Yes | No | No |
+| redis-py `Lock` | No | No | No | No |
+| relier | Yes | Yes | Partial (framework) | App-owned |
+
+fencekit complements celery-once. celery-once dedupes scheduling; fencekit rejects
+writes from a worker whose lock TTL already expired.
+
+## Local demo (no cloud)
+
+Redis via Docker on your machine. No hosted services, no monthly bill.
+
+```bash
+docker compose -f examples/reference/docker-compose.yml up -d
+pip install -e .
+python examples/reference/demo_stale_fence.py
+python examples/reference/demo_idempotency.py
+```
+
+See [examples/reference/README.md](examples/reference/README.md).
+
+## Guarantees
 
 | Claim | Status |
 |-------|--------|
@@ -92,9 +123,9 @@ Typed public API (`py.typed`). No Celery adapter yet; wire the guard in your tas
 | Memoized result after `mark_done(..., result=...)` | Yes (within TTL) |
 | Mutual exclusion while lock TTL held (single Redis primary) | Best-effort lease |
 | Stale holder blocked via `FenceGate` / `fenced_update` | Yes (when used) |
-| Exactly-once delivery | **No** |
-| Safety under Redis failover / split brain | **No** |
-| Writes that skip the fencing token | **No** |
+| Exactly-once delivery | No |
+| Safety under Redis failover / split brain | No |
+| Writes that skip the fencing token | No |
 
 fencekit does not implement Redlock. Fencing only works when the storage layer
 checks the token in the same operation as the write.
