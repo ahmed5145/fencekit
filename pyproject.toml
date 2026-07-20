@@ -41,6 +41,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/ahmed5145/fencekit"
 Documentation = "https://github.com/ahmed5145/fencekit/blob/main/DESIGN.md"
+Comparison = "https://github.com/ahmed5145/fencekit/blob/main/docs/COMPARISON.md"
 Changelog = "https://github.com/ahmed5145/fencekit/blob/main/CHANGELOG.md"
 Repository = "https://github.com/ahmed5145/fencekit"
 
@@ -64,6 +65,8 @@ packages = ["src/fencekit"]
 include = [
     "/src",
     "/tests",
+    "/docs",
+    "/examples",
     "/README.md",
     "/DESIGN.md",
     "/CHANGELOG.md",
