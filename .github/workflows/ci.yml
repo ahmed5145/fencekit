@@ -71,4 +71,4 @@ jobs:
       - name: Build
         run: uv build
       - name: Check package metadata
-        run: uvx --from twine==6.2.0 twine check dist/*
+        run: uvx --from twine==7.0.0 twine check dist/*
